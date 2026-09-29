@@ -1,60 +1,177 @@
-
 from io import BytesIO
+from time import perf_counter
 
 import torch
 from PIL import Image
-from torchvision.models import ResNet18_Weights, resnet18
+from torchvision.models import (
+    ResNet18_Weights,
+    resnet18
+)
 
 
 class ImageClassifier:
-    def __init__(self) -> None:
+
+    def __init__(self):
+
         self.model = None
         self.transforms = None
         self.categories = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.device = torch.device(
+            "cuda"
+            if torch.cuda.is_available()
+            else "cpu"
+        )
+
+        self.last_model_load_ms = 0.0
 
     @property
-    def is_loaded(self) -> bool:
+    def is_loaded(self):
         return self.model is not None
 
     @property
-    def device_name(self) -> str:
+    def device_name(self):
+
         if self.device.type == "cuda":
             return torch.cuda.get_device_name(0)
+
         return "cpu"
 
-    def load(self) -> None:
+    def load(self):
+
         if self.is_loaded:
-            return
+            return 0.0
+
+        start = perf_counter()
 
         weights = ResNet18_Weights.DEFAULT
-        self.model = resnet18(weights=weights).to(self.device)
-        self.model.eval()
-        self.transforms = weights.transforms()
-        self.categories = weights.meta["categories"]
 
-    def predict(self, image_bytes: bytes, top_k: int = 5) -> list[dict]:
-        self.load()
+        self.model = resnet18(
+            weights=weights
+        ).to(self.device)
+
+        self.model.eval()
+
+        self.transforms = weights.transforms()
+
+        self.categories = (
+            weights.meta["categories"]
+        )
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
+        self.last_model_load_ms = (
+            perf_counter() - start
+        ) * 1000
+
+        return self.last_model_load_ms
+
+    def predict(
+        self,
+        image_bytes: bytes,
+        top_k: int = 5
+    ):
+
+        model_load_ms = self.load()
 
         try:
-            image = Image.open(BytesIO(image_bytes)).convert("RGB")
-        except Exception as exc:
-            raise ValueError("The uploaded file is not a valid image.") from exc
 
-        tensor = self.transforms(image).unsqueeze(0).to(self.device)
+            image = Image.open(
+                BytesIO(image_bytes)
+            ).convert("RGB")
+
+        except Exception as exc:
+
+            raise ValueError(
+                "The uploaded file is not a valid image."
+            ) from exc
+
+        # -------------------------
+        # PREPROCESSING TIMER
+        # -------------------------
+
+        preprocess_start = perf_counter()
+
+        tensor = (
+            self.transforms(image)
+            .unsqueeze(0)
+            .to(self.device)
+        )
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
+        preprocess_ms = (
+            perf_counter() - preprocess_start
+        ) * 1000
+
+        # -------------------------
+        # INFERENCE TIMER
+        # -------------------------
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
+        inference_start = perf_counter()
 
         with torch.inference_mode():
-            logits = self.model(tensor)
-            probabilities = torch.softmax(logits, dim=1)[0]
-            scores, indices = torch.topk(probabilities, k=top_k)
 
-        results = []
-        for score, index in zip(scores.cpu(), indices.cpu()):
-            results.append(
-                {
-                    "class_id": int(index.item()),
-                    "label": self.categories[index.item()],
-                    "probability": round(float(score.item()), 6),
-                }
+            logits = self.model(tensor)
+
+            probabilities = torch.softmax(
+                logits,
+                dim=1
+            )[0]
+
+            scores, indices = torch.topk(
+                probabilities,
+                k=top_k
             )
-        return results
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
+        inference_ms = (
+            perf_counter() - inference_start
+        ) * 1000
+
+        # -------------------------
+        # FORMAT RESULTS
+        # -------------------------
+
+        predictions = []
+
+        for score, index in zip(
+            scores.cpu(),
+            indices.cpu()
+        ):
+
+            predictions.append({
+                "class_id":
+                    int(index.item()),
+
+                "label":
+                    self.categories[index.item()],
+
+                "probability":
+                    round(
+                        float(score.item()),
+                        6
+                    )
+            })
+
+        return {
+
+            "model_load_ms":
+                round(model_load_ms, 3),
+
+            "preprocess_ms":
+                round(preprocess_ms, 3),
+
+            "inference_ms":
+                round(inference_ms, 3),
+
+            "predictions":
+                predictions
+        }
