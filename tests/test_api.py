@@ -14,7 +14,7 @@ def test_root():
 
     assert (
         response.json()["version"]
-        == "0.2.0"
+        == "0.4.0"
     )
 
     assert (
