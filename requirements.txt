@@ -7,3 +7,4 @@ pytest
 httpx
 sqlalchemy
 psycopg[binary]
+redis

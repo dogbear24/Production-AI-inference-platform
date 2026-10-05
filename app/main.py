@@ -1,6 +1,7 @@
 from time import perf_counter
 from uuid import uuid4
 from app.database import init_db
+from app.job_routes import router as job_router
 from app.registry_routes import router as registry_router
 
 from fastapi import (
@@ -19,7 +20,7 @@ app = FastAPI(
 
     title="AI Inference Platform",
 
-    version="0.4.0",
+    version="0.6.0",
 
     description=(
         "Production-oriented "
@@ -30,6 +31,7 @@ app = FastAPI(
 init_db()
 
 app.include_router(registry_router)
+app.include_router(job_router)
 
 
 classifier = ImageClassifier()
@@ -105,7 +107,7 @@ def root():
             "AI Inference Platform",
 
         "version":
-            "0.4.0",
+            "0.6.0",
 
         "docs":
             "/docs"
