@@ -175,3 +175,163 @@ class ImageClassifier:
             "predictions":
                 predictions
         }
+        
+        
+    def predict_batch(
+        self,
+        image_bytes_list: list[bytes],
+        top_ks: list[int],
+    ) -> dict:
+
+        if not image_bytes_list:
+            raise ValueError(
+                "Batch must contain at least one image."
+            )
+
+        if len(image_bytes_list) != len(top_ks):
+            raise ValueError(
+                "Each image must have a matching top_k."
+            )
+
+        model_load_ms = self.load()
+
+        images = []
+
+        for image_bytes in image_bytes_list:
+
+            try:
+
+                image = Image.open(
+                    BytesIO(image_bytes)
+                ).convert("RGB")
+
+            except Exception as exc:
+
+                raise ValueError(
+                    "A batch item is not a valid image."
+                ) from exc
+
+            images.append(image)
+
+        # ==================================
+        # BATCH PREPROCESSING
+        # ==================================
+
+        preprocess_start = perf_counter()
+
+        tensors = [
+            self.transforms(image)
+            for image in images
+        ]
+
+        batch_tensor = torch.stack(
+            tensors,
+            dim=0,
+        ).to(self.device)
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
+        preprocess_ms = (
+            perf_counter()
+            - preprocess_start
+        ) * 1000
+
+        # ==================================
+        # BATCH INFERENCE
+        # ==================================
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
+        inference_start = perf_counter()
+
+        with torch.inference_mode():
+
+            logits = self.model(
+                batch_tensor
+            )
+
+            probabilities = torch.softmax(
+                logits,
+                dim=1,
+            )
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
+        inference_ms = (
+            perf_counter()
+            - inference_start
+        ) * 1000
+
+        # ==================================
+        # SPLIT RESULTS
+        # ==================================
+
+        batch_predictions = []
+
+        for probabilities_row, top_k in zip(
+            probabilities,
+            top_ks,
+        ):
+
+            scores, indices = torch.topk(
+                probabilities_row,
+                k=top_k,
+            )
+
+            predictions = []
+
+            for score, index in zip(
+                scores.cpu(),
+                indices.cpu(),
+            ):
+
+                predictions.append({
+                    "class_id":
+                        int(index.item()),
+
+                    "label":
+                        self.categories[
+                            index.item()
+                        ],
+
+                    "probability":
+                        round(
+                            float(score.item()),
+                            6,
+                        ),
+                })
+
+            batch_predictions.append(
+                predictions
+            )
+
+        return {
+            "batch_size":
+                len(image_bytes_list),
+
+            "model_load_ms":
+                round(
+                    model_load_ms,
+                    3,
+                ),
+
+            "preprocess_ms":
+                round(
+                    preprocess_ms,
+                    3,
+                ),
+
+            "inference_ms":
+                round(
+                    inference_ms,
+                    3,
+                ),
+
+            "predictions":
+                batch_predictions,
+        }    
+            
+            

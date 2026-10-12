@@ -4,6 +4,13 @@ from app.database import init_db
 from app.job_routes import router as job_router
 from app.registry_routes import router as registry_router
 
+from prometheus_client import make_asgi_app
+
+from app.api_prometheus import (
+    HTTP_REQUESTS,
+    HTTP_REQUEST_LATENCY,
+)
+
 from fastapi import (
     FastAPI,
     File,
@@ -20,7 +27,7 @@ app = FastAPI(
 
     title="AI Inference Platform",
 
-    version="0.6.0",
+    version="0.8.0",
 
     description=(
         "Production-oriented "
@@ -32,6 +39,13 @@ init_db()
 
 app.include_router(registry_router)
 app.include_router(job_router)
+
+prometheus_app = make_asgi_app()
+
+app.mount(
+    "/prometheus",
+    prometheus_app,
+)
 
 
 classifier = ImageClassifier()
@@ -54,6 +68,10 @@ async def request_metrics_middleware(
     request.state.request_id = request_id
 
     start = perf_counter()
+    
+    track_prometheus = not request.url.path.startswith(
+    "/prometheus"
+    )
 
     try:
 
@@ -71,6 +89,19 @@ async def request_metrics_middleware(
             latency_ms,
             500
         )
+        
+        if track_prometheus:
+
+            HTTP_REQUESTS.labels(
+                method=request.method,
+                status="500",
+            ).inc()
+
+            HTTP_REQUEST_LATENCY.labels(
+                method=request.method,
+            ).observe(
+                latency_ms / 1000
+            )
 
         raise
 
@@ -82,6 +113,19 @@ async def request_metrics_middleware(
         latency_ms,
         status_code
     )
+    
+    if track_prometheus:
+
+        HTTP_REQUESTS.labels(
+            method=request.method,
+            status=str(status_code),
+        ).inc()
+
+        HTTP_REQUEST_LATENCY.labels(
+            method=request.method,
+        ).observe(
+            latency_ms / 1000
+        )
 
     response.headers[
         "X-Request-ID"
@@ -107,7 +151,7 @@ def root():
             "AI Inference Platform",
 
         "version":
-            "0.6.0",
+            "0.8.0",
 
         "docs":
             "/docs"

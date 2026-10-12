@@ -1,4 +1,5 @@
 import redis
+from app.api_prometheus import INFERENCE_JOBS_SUBMITTED
 
 from fastapi import (
     APIRouter,
@@ -94,6 +95,8 @@ async def create_job(
             image_bytes=contents,
             top_k=top_k,
         )
+        
+        INFERENCE_JOBS_SUBMITTED.inc()
 
     except redis.RedisError as exc:
 

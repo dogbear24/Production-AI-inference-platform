@@ -61,7 +61,6 @@ services:
       REDIS_URL: redis://redis:6379/0
 
     depends_on:
-
       postgres:
         condition: service_healthy
 
@@ -74,6 +73,8 @@ services:
   worker:
     build: .
 
+    gpus: all
+
     command:
       [
         "python",
@@ -81,12 +82,16 @@ services:
         "app.worker"
       ]
 
+    expose:
+      - "8001"
+
     environment:
       DATABASE_URL: postgresql+psycopg://inference:inference@postgres:5432/inference
       REDIS_URL: redis://redis:6379/0
+      MAX_BATCH_SIZE: "4"
+      BATCH_WAIT_MS: "25"
 
     depends_on:
-
       postgres:
         condition: service_healthy
 
@@ -95,9 +100,74 @@ services:
 
     restart: unless-stopped
 
+    
+
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+
+    environment:
+      REDIS_ADDR: redis://redis:6379
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+
+    environment:
+      DATA_SOURCE_URI: postgres:5432/inference?sslmode=disable
+      DATA_SOURCE_USER: inference
+      DATA_SOURCE_PASS: inference
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    depends_on:
+      - api
+      - worker
+      - redis-exporter
+      - postgres-exporter
+
+
+  grafana:
+    image: grafana/grafana:13.2.3
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+
+    depends_on:
+      - prometheus
+
 
 volumes:
 
   postgres_data:
 
   redis_data:
+
+  prometheus_data:
+
+  grafana_data:
