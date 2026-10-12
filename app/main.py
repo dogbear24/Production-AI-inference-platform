@@ -27,7 +27,7 @@ app = FastAPI(
 
     title="AI Inference Platform",
 
-    version="0.9.0",
+    version="1.0.0",
 
     description=(
         "Production-oriented "
@@ -151,7 +151,7 @@ def root():
             "AI Inference Platform",
 
         "version":
-            "0.9.0",
+            "1.0.0",
 
         "docs":
             "/docs"

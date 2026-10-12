@@ -21,6 +21,18 @@ services:
       timeout: 5s
       retries: 10
 
+  frontend:
+    build:
+      context: ./frontend
+
+    ports:
+      - "5173:80"
+
+    depends_on:
+      - api
+
+    restart: unless-stopped
+
 
   redis:
     image: redis:7-alpine
