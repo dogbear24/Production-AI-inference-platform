@@ -1,7 +1,4 @@
 import json
-
-import redis
-
 import os
 import time
 
@@ -26,8 +23,36 @@ from app.worker_prometheus import (
     WORKER_QUEUE_DEPTH,
 )
 
+from app.onnx_inference import (
+    ONNXImageClassifier,
+)
 
-classifier = ImageClassifier()
+
+INFERENCE_BACKEND = os.getenv(
+    "INFERENCE_BACKEND",
+    "pytorch",
+).lower()
+
+
+if INFERENCE_BACKEND == "onnx":
+
+    classifier = (
+        ONNXImageClassifier()
+    )
+
+elif INFERENCE_BACKEND == "pytorch":
+
+    classifier = (
+        ImageClassifier()
+    )
+
+else:
+
+    raise RuntimeError(
+        "Unknown inference backend: "
+        f"{INFERENCE_BACKEND}"
+    )
+
 
 MAX_BATCH_SIZE = int(
     os.getenv(
@@ -35,6 +60,7 @@ MAX_BATCH_SIZE = int(
         "8",
     )
 )
+
 
 BATCH_WAIT_MS = float(
     os.getenv(
@@ -45,6 +71,8 @@ BATCH_WAIT_MS = float(
 
 
 def process_job(job_id):
+
+    job_started = time.perf_counter()
 
     job_key = f"job:{job_id}"
 
@@ -111,7 +139,7 @@ def process_job(job_id):
             image_bytes,
             top_k=top_k,
         )
-        
+
         WORKER_INFERENCE_DURATION.observe(
             result["inference_ms"] / 1000
         )
@@ -161,7 +189,7 @@ def process_job(job_id):
             f"[worker] Failed {job_id}: "
             f"{exc}"
         )
-        
+
         WORKER_JOBS_PROCESSED.labels(
             status="failed"
         ).inc()
@@ -496,6 +524,7 @@ def process_batch(
             - batch_started
         )
 
+
 def run_worker():
 
     print(
@@ -510,6 +539,8 @@ def run_worker():
         "=============================="
     )
 
+    classifier.load()
+
     print(
         f"Device: {classifier.device_name}"
     )
@@ -521,7 +552,7 @@ def run_worker():
     print(
         "Waiting for jobs..."
     )
-    
+
     start_http_server(8001)
 
     print(
@@ -529,8 +560,20 @@ def run_worker():
         "http://0.0.0.0:8001/metrics"
     )
 
+    print(
+        "Inference backend:",
+        INFERENCE_BACKEND,
+    )
+
+    classifier.load()
+
+    print(
+        "Device / provider:",
+        classifier.device_name,
+    )
+
     while True:
-        
+
         try:
 
             WORKER_QUEUE_DEPTH.set(

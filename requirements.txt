@@ -9,3 +9,7 @@ sqlalchemy
 psycopg[binary]
 redis
 prometheus-client
+onnx
+onnxscript
+onnxruntime-gpu
+numpy
