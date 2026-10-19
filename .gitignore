@@ -9,6 +9,8 @@ __pycache__/
 models/
 data/
 DAY1.md
-README.md
-benchmarks/test.jpgmodel_registry.db
-models/*.onnx
+benchmarks/test.jpg
+model_registry.db
+models/
+DAY1.md
+model_registry.db

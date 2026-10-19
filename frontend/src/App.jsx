@@ -70,7 +70,8 @@ export default function App() {
       }
 
       if (metricsResponse.ok) {
-        setMetrics(await metricsResponse.json());
+        const data = await metricsResponse.json();
+        setMetrics(data.api ?? {});
       }
 
       if (modelsResponse.ok) {

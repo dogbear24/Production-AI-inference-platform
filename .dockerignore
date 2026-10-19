@@ -8,4 +8,4 @@ __pycache__
 *.pyo
 *.db
 model_registry.db
-benchmarks/results.csvmodels/*.onnx
+models/*.onnx

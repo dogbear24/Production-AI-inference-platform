@@ -18,7 +18,6 @@ from app.worker_prometheus import (
     WORKER_BATCH_DURATION,
     WORKER_BATCH_SIZE,
     WORKER_INFERENCE_DURATION,
-    WORKER_JOB_DURATION,
     WORKER_JOBS_PROCESSED,
     WORKER_QUEUE_DEPTH,
 )
@@ -69,135 +68,6 @@ BATCH_WAIT_MS = float(
     )
 )
 
-
-def process_job(job_id):
-
-    job_started = time.perf_counter()
-
-    job_key = f"job:{job_id}"
-
-    input_key = (
-        f"job:{job_id}:input"
-    )
-
-    print(
-        f"[worker] Processing {job_id}"
-    )
-
-    try:
-
-        metadata = redis_text.hgetall(
-            job_key
-        )
-
-        if not metadata:
-
-            print(
-                f"[worker] Job {job_id} "
-                "does not exist."
-            )
-
-            return
-
-        redis_text.hset(
-            job_key,
-            mapping={
-                "status": "processing",
-                "started_at": utc_now(),
-            },
-        )
-
-        image_bytes = None
-
-        for attempt in range(3):
-
-            image_bytes = redis_binary.get(
-                input_key
-            )
-
-            if image_bytes is not None:
-                break
-
-            time.sleep(0.25)
-
-
-        if image_bytes is None:
-
-            raise RuntimeError(
-                "Input image expired "
-                "or could not be found."
-            )
-
-        top_k = int(
-            metadata.get(
-                "top_k",
-                "5",
-            )
-        )
-
-        result = classifier.predict(
-            image_bytes,
-            top_k=top_k,
-        )
-
-        WORKER_INFERENCE_DURATION.observe(
-            result["inference_ms"] / 1000
-        )
-
-        redis_text.hset(
-            job_key,
-            mapping={
-                "status": "completed",
-                "finished_at": utc_now(),
-                "device":
-                    classifier.device_name,
-                "result":
-                    json.dumps(result),
-            },
-        )
-
-        redis_text.expire(
-            job_key,
-            JOB_TTL_SECONDS,
-        )
-
-        redis_binary.delete(
-            input_key
-        )
-
-        print(
-            f"[worker] Completed {job_id}"
-        )
-
-    except Exception as exc:
-
-        redis_text.hset(
-            job_key,
-            mapping={
-                "status": "failed",
-                "finished_at": utc_now(),
-                "error": str(exc),
-            },
-        )
-
-        redis_text.expire(
-            job_key,
-            JOB_TTL_SECONDS,
-        )
-
-        print(
-            f"[worker] Failed {job_id}: "
-            f"{exc}"
-        )
-
-        WORKER_JOBS_PROCESSED.labels(
-            status="failed"
-        ).inc()
-
-        WORKER_JOB_DURATION.observe(
-            time.perf_counter()
-            - job_started
-        )
 
 
 def collect_batch(
@@ -539,7 +409,6 @@ def run_worker():
         "=============================="
     )
 
-    classifier.load()
 
     print(
         f"Device: {classifier.device_name}"
