@@ -14,3 +14,7 @@ model_registry.db
 models/
 DAY1.md
 model_registry.db
+node_modules/
+frontend/node_modules/
+frontend/dist/
+*.pyc
